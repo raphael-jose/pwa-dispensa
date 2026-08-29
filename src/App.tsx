@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Home, Package, Camera, Clock, Settings } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { getAllProducts, getAllPantryItems, getSettings, db } from '@/database';
+import { startAutoSync } from '@/sync';
 import Dashboard from '@/pages/Dashboard';
 import PantryPage from '@/pages/PantryPage';
 import ScannerPage from '@/pages/ScannerPage';
@@ -25,6 +26,7 @@ export default function App() {
     loadData();
     setupOnlineListener();
     loadTheme();
+    startAutoSync(30000);
   }, []);
 
   async function loadData() {
