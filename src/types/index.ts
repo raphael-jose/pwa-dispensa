@@ -1,4 +1,14 @@
-// ==================== Product Types ====================
+// ==================== Product ====================
+
+export type ProductCategory =
+  | 'alimentos'
+  | 'bebidas'
+  | 'limpeza'
+  | 'higiene'
+  | 'farmacia'
+  | 'pet'
+  | 'descartaveis'
+  | 'outros';
 
 export interface Product {
   id: string;
@@ -6,16 +16,19 @@ export interface Product {
   name: string;
   brand: string;
   category: ProductCategory;
-  quantityUnit: QuantityUnit;
+  quantityUnit: string;
   packageSize: string;
   imageUrl: string;
   ingredients: string;
   nutritionalInfo: string;
-  source: ProductSource;
-  localImage?: Blob;
+  source: string;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// ==================== Pantry ====================
+
+export type PantryLocation = 'despensa' | 'geladeira' | 'freezer' | 'armario' | 'outro';
 
 export interface PantryItem {
   id: string;
@@ -26,10 +39,11 @@ export interface PantryItem {
   openedDate: Date | null;
   location: PantryLocation;
   notes: string;
-  batchNumber?: string;
   createdAt: Date;
   updatedAt: Date;
 }
+
+// ==================== Batches ====================
 
 export interface ProductBatch {
   id: string;
@@ -38,9 +52,12 @@ export interface ProductBatch {
   quantity: number;
   expirationDate: Date | null;
   purchaseDate: Date | null;
-  batchNumber?: string;
   createdAt: Date;
 }
+
+// ==================== Movements ====================
+
+export type MovementType = 'entrada' | 'consumo' | 'ajuste' | 'exclusao' | 'validade';
 
 export interface Movement {
   id: string;
@@ -53,55 +70,18 @@ export interface Movement {
   createdAt: Date;
 }
 
-// ==================== Enums ====================
-
-export type ProductCategory =
-  | 'alimentos'
-  | 'bebidas'
-  | 'limpeza'
-  | 'higiene'
-  | 'farmacia'
-  | 'pet'
-  | 'outros';
-
-export type QuantityUnit = 'un' | 'kg' | 'g' | 'l' | 'ml' | 'cx' | 'pct';
-
-export type ProductSource = 'openfoodfacts' | 'manual' | 'local';
-
-export type MovementType = 'entrada' | 'consumo' | 'ajuste' | 'exclusao' | 'validade';
-
-export type PantryLocation = 'despensa' | 'geladeira' | 'freezer' | 'armario' | 'outro';
-
-export type ExpiryStatus = 'normal' | 'atencao' | 'critico' | 'vencido' | 'sem_validade';
-
-// ==================== API Types ====================
-
-export interface OpenFoodFactsProduct {
-  code: string;
-  product?: {
-    product_name: string;
-    brands: string;
-    categories: string;
-    image_front_url: string;
-    ingredients_text: string;
-    nutrition_grades: string;
-    quantity: string;
-  };
-  status: number;
-}
-
-// ==================== Sync Types ====================
+// ==================== Sync ====================
 
 export interface SyncQueueItem {
-  id: number;
+  id?: number;
   action: 'create' | 'update' | 'delete';
-  table: 'products' | 'pantry_items' | 'movements';
+  table: string;
   data: Record<string, unknown>;
   createdAt: Date;
   synced: boolean;
 }
 
-// ==================== Settings Types ====================
+// ==================== Settings ====================
 
 export interface AppSettings {
   expiryWarningDays: number;
@@ -113,12 +93,29 @@ export interface AppSettings {
   syncEnabled: boolean;
 }
 
-// ==================== UI Types ====================
+// ==================== Expiry ====================
 
-export interface ExpiryFilter {
+export type ExpiryStatus = 'vencido' | 'critico' | 'atencao' | 'normal' | 'sem_validade';
+
+export type ExpiryFilter = {
   all: boolean;
   vencidos: boolean;
   vencendo: boolean;
   emDia: boolean;
   semValidade: boolean;
+};
+
+// ==================== Open Food Facts ====================
+
+export interface OpenFoodFactsProduct {
+  status: number;
+  product?: {
+    product_name?: string;
+    brands?: string;
+    categories?: string;
+    image_front_url?: string;
+    ingredients_text?: string;
+    quantity?: string;
+    code?: string;
+  };
 }
