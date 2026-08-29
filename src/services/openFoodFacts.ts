@@ -14,22 +14,28 @@ export interface ProductLookupResult {
 }
 
 export async function lookupProductByBarcode(barcode: string): Promise<ProductLookupResult> {
+  const url = `${BASE_URL}/product/${barcode}?fields=code,product_name,brands,categories,image_front_url,ingredients_text,quantity&lc=pt`;
+  
   try {
-    const response = await fetch(
-      `${BASE_URL}/product/${barcode}?fields=code,product_name,brands,categories,image_front_url,ingredients_text,quantity&lc=pt`,
-      {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(10000)
-      }
-    );
+    console.log('[OFF] Buscando produto:', barcode, url);
+    
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    console.log('[OFF] Status:', response.status);
 
     if (!response.ok) {
+      console.log('[OFF] Response not OK:', response.status);
       return { found: false, barcode };
     }
 
     const data: OpenFoodFactsProduct = await response.json();
+    console.log('[OFF] Dados recebidos:', data);
 
     if (data.status !== 1 || !data.product) {
+      console.log('[OFF] Produto não encontrado na OFF');
       return { found: false, barcode };
     }
 
@@ -44,7 +50,8 @@ export async function lookupProductByBarcode(barcode: string): Promise<ProductLo
       ingredients: p.ingredients_text || '',
       quantity: p.quantity || ''
     };
-  } catch {
+  } catch (err) {
+    console.error('[OFF] Erro na busca:', err);
     return { found: false, barcode };
   }
 }

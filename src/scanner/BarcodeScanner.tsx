@@ -78,9 +78,11 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
           if (cancelled) return;
           if (result) {
             const format = result.getBarcodeFormat();
+            const text = result.getText();
+            console.log('[Scanner] Código lido:', text, 'Formato:', BarcodeFormat[format]);
             if (ALLOWED_FORMATS.includes(format)) {
               stopScanning();
-              onScan(result.getText(), BarcodeFormat[format] || 'unknown');
+              onScan(text, BarcodeFormat[format] || 'unknown');
             }
           }
         });
