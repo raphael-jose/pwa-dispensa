@@ -87,16 +87,17 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
     if (!isActive || !videoRef.current) return;
 
     let cancelled = false;
+    let reader: any = null;
 
     async function initScanner() {
       try {
         const { BrowserMultiFormatReader } = await import('@zxing/library');
-        const reader = new BrowserMultiFormatReader();
+        reader = new BrowserMultiFormatReader();
 
         if (!videoRef.current || cancelled) return;
 
         reader.decodeFromVideoElement(videoRef.current).then(
-          (result) => {
+          (result: any) => {
             if (cancelled) return;
             if (result) {
               const code = result.getText();
@@ -125,14 +126,18 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
             }
           },
           () => {
-            // Error during scanning - continue trying
+            // Error during scanning - continue trying after a short delay
             if (!cancelled && videoRef.current && isActive) {
-              reader.decodeFromVideoElement(videoRef.current).then(/* ignore */);
+              setTimeout(() => {
+                if (!cancelled && videoRef.current && reader) {
+                  reader.decodeFromVideoElement(videoRef.current).then(/* ignore */);
+                }
+              }, 500);
             }
           }
         );
-      } catch {
-        // ZXing not available - manual entry only
+      } catch (err) {
+        console.warn('ZXing not available, manual entry only:', err);
       }
     }
 
@@ -140,6 +145,9 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
 
     return () => {
       cancelled = true;
+      if (reader) {
+        try { reader.reset(); } catch {}
+      }
     };
   }, [isActive, onScan, stopCamera]);
 

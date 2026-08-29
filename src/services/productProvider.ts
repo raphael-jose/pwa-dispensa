@@ -2,12 +2,50 @@ import { lookupProductByBarcode, type ProductLookupResult } from './openFoodFact
 
 export type { ProductLookupResult };
 
+// Local cache for known products (barcode → product info)
+const LOCAL_CACHE_KEY = 'despensa_local_products';
+
+function getLocalCache(): Record<string, { name: string; brand: string; category: string }> {
+  try {
+    const data = localStorage.getItem(LOCAL_CACHE_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveToLocalCache(barcode: string, data: { name: string; brand: string; category: string }) {
+  try {
+    const cache = getLocalCache();
+    cache[barcode] = data;
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 /**
  * ProductProvider - abstraction layer for product lookup APIs.
- * Chains through: Open Food Facts → Open Beauty Facts → Open Products Facts
+ * Chains through: Local Cache → Open Food Facts → Open Beauty Facts → Open Products Facts
  */
 
 export async function lookupProduct(barcode: string): Promise<ProductLookupResult> {
+  // 1. Check local cache first
+  const cache = getLocalCache();
+  if (cache[barcode]) {
+    const cached = cache[barcode];
+    console.log('[Provider] Produto encontrado no cache local:', cached.name);
+    return {
+      found: true,
+      barcode,
+      name: cached.name,
+      brand: cached.brand,
+      category: cached.category,
+      source: 'local_cache'
+    };
+  }
+
+  // 2. Try external APIs
   return lookupProductByBarcode(barcode);
 }
 

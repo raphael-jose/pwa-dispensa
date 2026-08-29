@@ -133,7 +133,7 @@ export async function consumePantryItem(id: string, amount: number): Promise<voi
   if (!item) throw new Error('Item não encontrado');
   if (amount > item.quantity) throw new Error('Quantidade insuficiente');
 
-  const newQuantity = item.quantity - amount;
+  const newQuantity = Math.max(0, Math.round(item.quantity - amount));
 
   if (newQuantity <= 0) {
     await deletePantryItem(id);
@@ -209,10 +209,15 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<voi
 // ==================== Sync Queue ====================
 
 async function addToSyncQueue(action: SyncQueueItem['action'], table: SyncQueueItem['table'], data: unknown): Promise<void> {
+  // Serialize dates to ISO strings for safe storage
+  const serialized = JSON.parse(JSON.stringify(data, (_key, value) => {
+    if (value instanceof Date) return value.toISOString();
+    return value;
+  }));
   await db.syncQueue.add({
     action,
     table,
-    data: data as Record<string, unknown>,
+    data: serialized,
     createdAt: new Date(),
     synced: false
   });

@@ -1,12 +1,32 @@
-import { useState, useEffect } from 'react';
-import { X, Camera, Package, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { useState } from 'react';
+import { X, ArrowLeft, Camera, Package, Check, AlertTriangle, Loader2, Calendar } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
-import { createProduct, createPantryItem, getProductByBarcode, getAllProducts } from '@/database';
-import { lookupProduct, validateBarcode, type ProductLookupResult } from '@/services/productProvider';
+import { createProduct, createPantryItem, getProductByBarcode } from '@/database';
+import { lookupProduct, validateBarcode, saveToLocalCache } from '@/services/productProvider';
 import BarcodeScanner from '@/scanner/BarcodeScanner';
 import type { ProductCategory, PantryLocation } from '@/types';
 
 type Step = 'scanning' | 'loading' | 'found' | 'not_found' | 'form' | 'success';
+
+// Default expiration days by category
+const DEFAULT_EXPIRY_DAYS: Record<ProductCategory, number | null> = {
+  alimentos: 180,
+  bebidas: 365,
+  limpeza: 730,
+  higiene: 730,
+  farmacia: 365,
+  pet: 365,
+  descartaveis: null,
+  outros: null,
+};
+
+function getDefaultExpiration(category: ProductCategory): string {
+  const days = DEFAULT_EXPIRY_DAYS[category];
+  if (!days) return '';
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split('T')[0];
+}
 
 export default function ScannerPage() {
   const { setScannerOpen, addProduct, addPantryItem, settings } = useAppStore();
@@ -23,11 +43,9 @@ export default function ScannerPage() {
   const [imageUrl, setImageUrl] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [expirationDate, setExpirationDate] = useState('');
-  const [location, setLocation] = useState<PantryLocation>(settings.defaultLocation as PantryLocation || 'despensa');
+  const [location, setLocation] = useState<PantryLocation>((settings.defaultLocation as PantryLocation) || 'despensa');
   const [notes, setNotes] = useState('');
-
-  // Flash message
-  const [flashMessage, setFlashMessage] = useState('');
+  const [isManualCategory, setIsManualCategory] = useState(false);
 
   function handleScan(code: string) {
     console.log('[Scanner] Código lido:', code);
@@ -41,15 +59,20 @@ export default function ScannerPage() {
     setStep('loading');
 
     // Check local DB first
-    const localProduct = await getProductByBarcode(code);
-    if (localProduct) {
-      console.log('[Scanner] Produto encontrado localmente:', localProduct.name);
-      setName(localProduct.name);
-      setBrand(localProduct.brand);
-      setCategory(localProduct.category);
-      setImageUrl(localProduct.imageUrl);
-      setStep('form');
-      return;
+    try {
+      const localProduct = await getProductByBarcode(code);
+      if (localProduct) {
+        console.log('[Scanner] Produto encontrado localmente:', localProduct.name);
+        setName(localProduct.name);
+        setBrand(localProduct.brand);
+        setCategory(localProduct.category);
+        setImageUrl(localProduct.imageUrl);
+        setExpirationDate(getDefaultExpiration(localProduct.category));
+        setStep('form');
+        return;
+      }
+    } catch (err) {
+      console.warn('[Scanner] Erro ao buscar local:', err);
     }
 
     // Try external APIs
@@ -59,8 +82,10 @@ export default function ScannerPage() {
         console.log('[Scanner] Produto encontrado via API:', result.name, 'fonte:', result.source);
         setName(result.name || '');
         setBrand(result.brand || '');
-        setCategory((result.category as ProductCategory) || 'alimentos');
+        const cat = (result.category as ProductCategory) || 'alimentos';
+        setCategory(cat);
         setImageUrl(result.imageUrl || '');
+        setExpirationDate(getDefaultExpiration(cat));
         setStep('form');
       } else {
         console.log('[Scanner] Produto não encontrado em nenhuma base');
@@ -81,7 +106,7 @@ export default function ScannerPage() {
     try {
       // Create product
       const product = await createProduct({
-        barcode,
+        barcode: barcode || 'manual_' + Date.now(),
         name: name.trim(),
         brand: brand.trim(),
         category,
@@ -90,36 +115,62 @@ export default function ScannerPage() {
         imageUrl,
         ingredients: '',
         nutritionalInfo: '',
-        source: 'manual',
+        source: barcode ? 'scan' : 'manual',
       });
       addProduct(product);
 
-      // Create pantry item
-      if (expirationDate || quantity > 0) {
-        const item = await createPantryItem({
-          productId: product.id,
-          quantity,
-          expirationDate: expirationDate ? new Date(expirationDate) : null,
-          purchaseDate: new Date(),
-          openedDate: null,
-          location,
-          notes: notes.trim(),
+      // Save to local cache for future scans
+      if (barcode) {
+        saveToLocalCache(barcode, {
+          name: name.trim(),
+          brand: brand.trim(),
+          category,
         });
-        addPantryItem(item);
       }
+
+      // Parse expiration date - handle empty string gracefully
+      let expDate: Date | null = null;
+      if (expirationDate && expirationDate.trim() !== '') {
+        const parsed = new Date(expirationDate + 'T12:00:00');
+        if (!isNaN(parsed.getTime())) {
+          expDate = parsed;
+        }
+      }
+
+      // Create pantry item
+      const item = await createPantryItem({
+        productId: product.id,
+        quantity,
+        expirationDate: expDate,
+        purchaseDate: new Date(),
+        openedDate: null,
+        location,
+        notes: notes.trim(),
+      });
+      addPantryItem(item);
 
       setStep('success');
     } catch (err: any) {
       console.error('[Scanner] Erro ao salvar:', err);
-      alert('Erro ao salvar: ' + err.message);
+      // Show friendly error
+      const msg = err?.message || 'Erro desconhecido';
+      alert('Erro ao salvar: ' + msg + '\n\nTente novamente.');
     }
   }
 
   function handleManualSubmit() {
     if (manualCode.trim()) {
+      setBarcode(manualCode.trim());
       processBarcode(manualCode.trim());
       setShowManualEntry(false);
+      setManualCode('');
     }
+  }
+
+  function goToForm() {
+    // Go directly to manual form
+    setBarcode('');
+    setStep('not_found');
   }
 
   function resetScanner() {
@@ -132,8 +183,9 @@ export default function ScannerPage() {
     setImageUrl('');
     setQuantity(1);
     setExpirationDate('');
-    setLocation(settings.defaultLocation as PantryLocation || 'despensa');
+    setLocation((settings.defaultLocation as PantryLocation) || 'despensa');
     setNotes('');
+    setIsManualCategory(false);
   }
 
   // ---- Render ----
@@ -142,13 +194,20 @@ export default function ScannerPage() {
     return (
       <>
         <BarcodeScanner onScan={handleScan} onClose={() => setScannerOpen(false)} />
-        {/* Manual entry button */}
-        <div className="fixed bottom-24 inset-x-0 z-50 flex justify-center">
+
+        {/* Bottom buttons */}
+        <div className="fixed bottom-24 inset-x-0 z-50 flex flex-col items-center gap-3 px-4">
+          <button
+            onClick={() => goToForm()}
+            className="w-full max-w-xs py-3 bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-200 rounded-full text-sm font-medium backdrop-blur-sm shadow-lg"
+          >
+            📝 Cadastrar produto manualmente
+          </button>
           <button
             onClick={() => setShowManualEntry(true)}
-            className="px-6 py-3 bg-black/60 text-white rounded-full text-sm font-medium backdrop-blur-sm"
+            className="w-full max-w-xs py-3 bg-black/60 text-white rounded-full text-sm font-medium backdrop-blur-sm"
           >
-            Digitar código manualmente
+            🔢 Digitar código de barras
           </button>
         </div>
 
@@ -191,12 +250,12 @@ export default function ScannerPage() {
       <div className="fixed inset-0 z-50 bg-white dark:bg-gray-950 flex flex-col items-center justify-center gap-4">
         <Loader2 size={48} className="text-brand-600 animate-spin" />
         <p className="text-gray-600 dark:text-gray-300">Buscando produto...</p>
-        <p className="text-xs text-gray-400">{barcode}</p>
+        <p className="text-xs text-gray-400 font-mono">{barcode}</p>
         <button
           onClick={resetScanner}
-          className="mt-4 px-6 py-2 text-gray-500 text-sm"
+          className="mt-4 px-6 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl text-sm font-medium flex items-center gap-2"
         >
-          Cancelar
+          <ArrowLeft size={16} /> Voltar ao scanner
         </button>
       </div>
     );
@@ -236,24 +295,39 @@ export default function ScannerPage() {
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 px-4 py-3 flex items-center gap-3">
         <button
-          onClick={() => step === 'not_found' ? resetScanner() : setScannerOpen(false)}
+          onClick={resetScanner}
           className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center"
         >
-          <X size={16} />
+          <ArrowLeft size={16} className="text-gray-600 dark:text-gray-300" />
         </button>
-        <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-          {step === 'not_found' ? 'Cadastro manual' : 'Produto encontrado'}
-        </h2>
+        <div className="flex-1">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+            {step === 'not_found' ? 'Cadastrar produto' : 'Produto encontrado'}
+          </h2>
+          {barcode && (
+            <p className="text-xs text-gray-400 font-mono">{barcode}</p>
+          )}
+        </div>
+        <button
+          onClick={() => setScannerOpen(false)}
+          className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center"
+        >
+          <X size={16} className="text-gray-600 dark:text-gray-300" />
+        </button>
       </div>
 
-      <div className="p-4 max-w-lg mx-auto space-y-4">
+      <div className="p-4 max-w-lg mx-auto space-y-4 pb-24">
         {/* Info banner */}
         {step === 'not_found' && (
-          <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl flex items-start gap-2">
-            <AlertTriangle size={18} className="text-yellow-600 mt-0.5 shrink-0" />
+          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-2">
+            <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">Produto não encontrado</p>
-              <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">Código: {barcode}</p>
+              <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+                Produto não encontrado nas bases de dados
+              </p>
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                Preencha os dados abaixo. Da próxima vez que escanear este código, o produto será reconhecido automaticamente.
+              </p>
             </div>
           </div>
         )}
@@ -261,18 +335,20 @@ export default function ScannerPage() {
         {/* Image preview */}
         {imageUrl && (
           <div className="flex justify-center">
-            <img src={imageUrl} alt="" className="w-24 h-24 rounded-xl object-cover" />
+            <img src={imageUrl} alt="" className="w-24 h-24 rounded-xl object-cover shadow-sm" />
           </div>
         )}
 
         {/* Name */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome *</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Nome do produto *
+          </label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Nome do produto"
+            placeholder="Ex: Sabão em pó Omo"
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
           />
         </div>
@@ -284,7 +360,7 @@ export default function ScannerPage() {
             type="text"
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
-            placeholder="Marca do produto"
+            placeholder="Ex: Unilever"
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
           />
         </div>
@@ -294,7 +370,14 @@ export default function ScannerPage() {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Categoria</label>
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value as ProductCategory)}
+            onChange={(e) => {
+              const newCat = e.target.value as ProductCategory;
+              setCategory(newCat);
+              // Auto-update expiration date when category changes
+              if (!expirationDate || expirationDate === getDefaultExpiration(category)) {
+                setExpirationDate(getDefaultExpiration(newCat));
+              }
+            }}
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
           >
             <option value="alimentos">🍎 Alimentos</option>
@@ -310,13 +393,37 @@ export default function ScannerPage() {
 
         {/* Expiration date */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data de validade</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <span className="flex items-center gap-1.5">
+              <Calendar size={14} />
+              Data de validade
+            </span>
+          </label>
           <input
             type="date"
             value={expirationDate}
             onChange={(e) => setExpirationDate(e.target.value)}
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
           />
+          {expirationDate && (
+            <p className="text-xs text-gray-400 mt-1">
+              {(() => {
+                const exp = new Date(expirationDate + 'T12:00:00');
+                const now = new Date();
+                const diff = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (diff < 0) return '⚠️ Já vencido';
+                if (diff === 0) return '🔴 Vence hoje';
+                if (diff <= 7) return `🟠 Vence em ${diff} dias`;
+                if (diff <= 30) return `🟡 Vence em ${diff} dias`;
+                return `🟢 Vence em ${diff} dias`;
+              })()}
+            </p>
+          )}
+          {!expirationDate && (
+            <p className="text-xs text-gray-400 mt-1">
+              {category === 'descartaveis' ? 'Sem data de validade' : 'Adicione a data da embalagem'}
+            </p>
+          )}
         </div>
 
         {/* Quantity */}
@@ -325,14 +432,14 @@ export default function ScannerPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300"
+              className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 active:scale-90 transition-all"
             >
               -
             </button>
             <span className="text-xl font-bold text-gray-900 dark:text-white w-12 text-center">{quantity}</span>
             <button
               onClick={() => setQuantity(quantity + 1)}
-              className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300"
+              className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 active:scale-90 transition-all"
             >
               +
             </button>
@@ -371,7 +478,7 @@ export default function ScannerPage() {
         <button
           onClick={handleSave}
           disabled={!name.trim()}
-          className="w-full py-4 bg-brand-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
+          className="w-full py-4 bg-brand-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all shadow-lg shadow-brand-600/20"
         >
           Adicionar à despensa
         </button>
