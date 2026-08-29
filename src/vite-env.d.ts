@@ -9,3 +9,17 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// BarcodeDetector API types
+declare class BarcodeDetector {
+  constructor(options?: { formats?: string[] });
+  detect(imageSource: ImageBitmapSource): Promise<DetectedBarcode[]>;
+  static getSupportedFormats(): Promise<string[]>;
+}
+
+interface DetectedBarcode {
+  boundingBox: DOMRectReadOnly;
+  cornerPoints: DOMPointReadOnly[];
+  format: string;
+  rawValue: string;
+}

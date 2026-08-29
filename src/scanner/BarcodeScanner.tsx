@@ -13,8 +13,10 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
   const [hasFlash, setHasFlash] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [method, setMethod] = useState<string>('');
   const streamRef = useRef<MediaStream | null>(null);
-  const readerRef = useRef<any>(null);
+  const detectorRef = useRef<any>(null);
+  const animFrameRef = useRef<number>(0);
   const lastCodeRef = useRef<string>('');
   const lastCodeTimeRef = useRef<number>(0);
   const isActiveRef = useRef(false);
@@ -68,10 +70,12 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
     setIsActive(false);
     setScanning(false);
 
-    if (readerRef.current) {
-      try { readerRef.current.reset(); } catch {}
-      readerRef.current = null;
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = 0;
     }
+
+    detectorRef.current = null;
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -82,54 +86,55 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
   const startScanning = useCallback(async () => {
     if (!videoRef.current || !isActiveRef.current) return;
 
+    // Method 1: Try native BarcodeDetector API (Chrome, Edge, some Android)
+    if ('BarcodeDetector' in window) {
+      try {
+        const formats = await (BarcodeDetector as any).getSupportedFormats();
+        console.log('[Scanner] BarcodeDetector available, formats:', formats);
+
+        const detector = new (BarcodeDetector as any)({
+          formats: formats.filter((f: string) =>
+            f.includes('ean') || f.includes('upc') || f.includes('qr') || f.includes('code_128')
+          )
+        });
+
+        detectorRef.current = detector;
+        setMethod('BarcodeDetector (nativo)');
+        setScanning(true);
+
+        console.log('[Scanner] Using native BarcodeDetector API');
+        scanWithDetector(detector);
+        return;
+      } catch (err) {
+        console.warn('[Scanner] BarcodeDetector init failed:', err);
+      }
+    }
+
+    // Method 2: Fallback to ZXing
     try {
       const { BrowserMultiFormatReader } = await import('@zxing/library');
 
       if (!isActiveRef.current) return;
 
       const reader = new BrowserMultiFormatReader();
-      readerRef.current = reader;
+      setMethod('ZXing (fallback)');
       setScanning(true);
 
-      console.log('[Scanner] ZXing reader initialized, starting decode...');
+      console.log('[Scanner] Using ZXing library as fallback');
 
       reader.decodeFromVideoElement(videoRef.current).then(
         (result: any) => {
           if (!isActiveRef.current) return;
           if (result) {
-            const code = result.getText();
-            const now = Date.now();
-
-            console.log('[Scanner] Code detected:', code);
-
-            // Debounce: same code within 3 seconds
-            if (code === lastCodeRef.current && now - lastCodeTimeRef.current < 3000) {
-              // Continue scanning
-              if (isActiveRef.current && videoRef.current && readerRef.current) {
-                readerRef.current.decodeFromVideoElement(videoRef.current).catch(() => {});
-              }
-              return;
-            }
-
-            lastCodeRef.current = code;
-            lastCodeTimeRef.current = now;
-
-            // Vibrate if supported
-            if (navigator.vibrate) {
-              navigator.vibrate(200);
-            }
-
-            // Stop and send to parent
-            stopCamera();
-            onScan(code);
+            handleCodeDetected(result.getText());
           }
         },
-        (err: any) => {
-          // Error during scanning - this is normal, just keep trying
-          if (isActiveRef.current && videoRef.current && readerRef.current) {
+        () => {
+          // Error during scanning - keep trying
+          if (isActiveRef.current && videoRef.current) {
             setTimeout(() => {
-              if (isActiveRef.current && videoRef.current && readerRef.current) {
-                readerRef.current.decodeFromVideoElement(videoRef.current).catch(() => {});
+              if (isActiveRef.current && videoRef.current && reader) {
+                reader.decodeFromVideoElement(videoRef.current).catch(() => {});
               }
             }, 300);
           }
@@ -138,8 +143,66 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
     } catch (err) {
       console.error('[Scanner] ZXing init error:', err);
       setScanning(false);
+      setError('Scanner não disponível. Use o cadastro manual.');
     }
-  }, [onScan, stopCamera]);
+  }, []);
+
+  const scanWithDetector = useCallback((detector: any) => {
+    if (!videoRef.current || !isActiveRef.current) return;
+
+    const scanFrame = async () => {
+      if (!videoRef.current || !isActiveRef.current) return;
+
+      try {
+        const barcodes = await detector.detect(videoRef.current);
+        if (barcodes && barcodes.length > 0) {
+          const code = barcodes[0].rawValue;
+          if (code) {
+            handleCodeDetected(code);
+            return;
+          }
+        }
+      } catch (err) {
+        // Detection error, continue
+      }
+
+      // Continue scanning
+      if (isActiveRef.current) {
+        animFrameRef.current = requestAnimationFrame(scanFrame);
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(scanFrame);
+  }, []);
+
+  const handleCodeDetected = useCallback((code: string) => {
+    const now = Date.now();
+
+    // Debounce: same code within 3 seconds
+    if (code === lastCodeRef.current && now - lastCodeTimeRef.current < 3000) {
+      // Continue scanning
+      if (isActiveRef.current && videoRef.current) {
+        if (detectorRef.current) {
+          scanWithDetector(detectorRef.current);
+        }
+      }
+      return;
+    }
+
+    lastCodeRef.current = code;
+    lastCodeTimeRef.current = now;
+
+    console.log('[Scanner] Code detected:', code, 'method:', method);
+
+    // Vibrate if supported
+    if (navigator.vibrate) {
+      navigator.vibrate(200);
+    }
+
+    // Stop and send to parent
+    stopCamera();
+    onScan(code);
+  }, [onScan, stopCamera, method, scanWithDetector]);
 
   const toggleFlash = useCallback(async () => {
     if (!streamRef.current) return;
@@ -238,9 +301,11 @@ export default function BarcodeScanner({ onScan, onClose }: BarcodeScannerProps)
               <p className="text-white text-sm font-medium">
                 Posicione o código de barras dentro da moldura
               </p>
-              <p className="text-white/60 text-xs">
-                O scanner detecta automaticamente o código
-              </p>
+              {method && (
+                <p className="text-green-400/80 text-xs">
+                  ✓ {method}
+                </p>
+              )}
             </div>
           )}
         </div>
