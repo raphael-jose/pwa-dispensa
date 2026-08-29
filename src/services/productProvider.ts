@@ -4,19 +4,11 @@ export type { ProductLookupResult };
 
 /**
  * ProductProvider - abstraction layer for product lookup APIs.
- * Add new providers by implementing the same interface.
+ * Chains through: Open Food Facts → Open Beauty Facts → Open Products Facts
  */
 
 export async function lookupProduct(barcode: string): Promise<ProductLookupResult> {
-  // Try Open Food Facts first (for food products)
-  const result = await lookupProductByBarcode(barcode);
-
-  // Future: try other providers if not found
-  // if (!result.found) {
-  //   result = await lookupFromOtherAPI(barcode);
-  // }
-
-  return result;
+  return lookupProductByBarcode(barcode);
 }
 
 export function validateBarcode(code: string): { valid: boolean; type: string } {

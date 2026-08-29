@@ -55,9 +55,10 @@ export default function ScannerPage() {
       return;
     }
 
-    // Lookup online
+    // Lookup online (OFF → OBF → OPF)
     const result = await lookupProduct(code);
     setLookupResult(result);
+    console.log('[Scanner] Resultado:', result);
 
     if (result.found) {
       setName(result.name || '');
