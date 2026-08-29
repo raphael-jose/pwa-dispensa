@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react';
-import { Moon, Sun, Bell, BellOff, Wifi, WifiOff, Trash2, Info, ChevronRight } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Moon, Sun, Bell, BellOff, Wifi, WifiOff, Trash2, Info, ChevronRight, Upload, Download, FileText, CheckCircle } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
-import { getSettings, updateSettings } from '@/database';
+import { getSettings, updateSettings, getAllProducts } from '@/database';
+import { parseCSV, importProducts, getCSVTemplate } from '@/utils/csvImport';
 import type { AppSettings, PantryLocation } from '@/types';
 
 export default function SettingsPage() {
   const { settings, setSettings, isOnline, syncStatus } = useAppStore();
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ success: number; skipped: number; errors: string[] } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSettings().then(s => {
@@ -14,6 +18,37 @@ export default function SettingsPage() {
       setSettings(s);
     });
   }, []);
+
+  async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+
+    try {
+      const text = await file.text();
+      const rows = parseCSV(text);
+      const result = await importProducts(rows);
+      setImportResult(result);
+    } catch (err: any) {
+      setImportResult({ success: 0, skipped: 0, errors: ['Erro ao ler arquivo: ' + err.message] });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function downloadTemplate() {
+    const csv = getCSVTemplate();
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'modelo_produtos.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleUpdate(updates: Partial<AppSettings>) {
     const merged = { ...localSettings, ...updates };
@@ -149,6 +184,72 @@ export default function SettingsPage() {
             </button>
           }
         />
+      </Section>
+
+      {/* Import */}
+      <Section title="Importar Produtos">
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Importe uma planilha CSV com seus produtos para preencher a despensa automaticamente.
+          </p>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={downloadTemplate}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium"
+            >
+              <Download size={16} /> Modelo CSV
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
+            >
+              {importing ? (
+                <><span className="animate-spin">⏳</span> Importando...</>
+              ) : (
+                <><Upload size={16} /> Importar CSV</>
+              )}
+            </button>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.txt"
+            onChange={handleFileImport}
+            className="hidden"
+          />
+
+          {importResult && (
+            <div className={`p-3 rounded-xl ${
+              importResult.errors.length > 0
+                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+                : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+            }`}>
+              <div className="flex items-center gap-2 mb-1">
+                <CheckCircle size={16} className={importResult.errors.length > 0 ? 'text-amber-600' : 'text-green-600'} />
+                <span className="text-sm font-medium">
+                  {importResult.success} importados, {importResult.skipped} ignorados
+                </span>
+              </div>
+              {importResult.errors.length > 0 && (
+                <ul className="text-xs text-amber-700 dark:text-amber-300 mt-1 space-y-0.5">
+                  {importResult.errors.slice(0, 5).map((err, i) => (
+                    <li key={i}>• {err}</li>
+                  ))}
+                  {importResult.errors.length > 5 && (
+                    <li>... e mais {importResult.errors.length - 5} erros</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400">
+            Colunas aceitas: barcode, nome, marca, categoria, validade, quantidade, local, observacoes
+          </p>
+        </div>
       </Section>
 
       {/* About */}
