@@ -1,38 +1,18 @@
-import { useState } from 'react';
-import { X, ArrowLeft, Camera, Package, Check, AlertTriangle, Loader2, Calendar } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { X, ArrowLeft, Check, AlertTriangle, Loader2, Calendar, Barcode, Tag, MapPin } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { createProduct, createPantryItem, getProductByBarcode } from '@/database';
 import { lookupProduct, validateBarcode, saveToLocalCache } from '@/services/productProvider';
+import { analyzeBarcode, getDefaultExpirationDays, formatExpirationInfo } from '@/utils/barcode';
 import BarcodeScanner from '@/scanner/BarcodeScanner';
 import type { ProductCategory, PantryLocation } from '@/types';
 
-type Step = 'scanning' | 'loading' | 'found' | 'not_found' | 'form' | 'success';
-
-// Default expiration days by category
-const DEFAULT_EXPIRY_DAYS: Record<ProductCategory, number | null> = {
-  alimentos: 180,
-  bebidas: 365,
-  limpeza: 730,
-  higiene: 730,
-  farmacia: 365,
-  pet: 365,
-  descartaveis: null,
-  outros: null,
-};
-
-function getDefaultExpiration(category: ProductCategory): string {
-  const days = DEFAULT_EXPIRY_DAYS[category];
-  if (!days) return '';
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().split('T')[0];
-}
+type Step = 'scanning' | 'loading' | 'form' | 'success';
 
 export default function ScannerPage() {
   const { setScannerOpen, addProduct, addPantryItem, settings } = useAppStore();
   const [step, setStep] = useState<Step>('scanning');
   const [barcode, setBarcode] = useState('');
-  const [barcodeType, setBarcodeType] = useState('');
   const [manualCode, setManualCode] = useState('');
   const [showManualEntry, setShowManualEntry] = useState(false);
 
@@ -45,13 +25,16 @@ export default function ScannerPage() {
   const [expirationDate, setExpirationDate] = useState('');
   const [location, setLocation] = useState<PantryLocation>((settings.defaultLocation as PantryLocation) || 'despensa');
   const [notes, setNotes] = useState('');
-  const [isManualCategory, setIsManualCategory] = useState(false);
+
+  // Analyze barcode for Brazilian product hints
+  const barcodeInfo = useMemo(() => {
+    if (!barcode) return null;
+    return analyzeBarcode(barcode);
+  }, [barcode]);
 
   function handleScan(code: string) {
     console.log('[Scanner] Código lido:', code);
-    const validation = validateBarcode(code);
     setBarcode(code);
-    setBarcodeType(validation.type);
     processBarcode(code);
   }
 
@@ -67,7 +50,8 @@ export default function ScannerPage() {
         setBrand(localProduct.brand);
         setCategory(localProduct.category);
         setImageUrl(localProduct.imageUrl);
-        setExpirationDate(getDefaultExpiration(localProduct.category));
+        const days = getDefaultExpirationDays(localProduct.category) ?? 180;
+        setExpirationDate(getDefaultDate(days));
         setStep('form');
         return;
       }
@@ -85,16 +69,32 @@ export default function ScannerPage() {
         const cat = (result.category as ProductCategory) || 'alimentos';
         setCategory(cat);
         setImageUrl(result.imageUrl || '');
-        setExpirationDate(getDefaultExpiration(cat));
+        const days = getDefaultExpirationDays(cat) ?? 180;
+        setExpirationDate(getDefaultDate(days));
         setStep('form');
-      } else {
-        console.log('[Scanner] Produto não encontrado em nenhuma base');
-        setStep('not_found');
+        return;
       }
     } catch (err) {
       console.error('[Scanner] Erro na busca:', err);
-      setStep('not_found');
     }
+
+    // Not found - go to form with smart defaults from barcode analysis
+    const info = analyzeBarcode(code);
+    if (info.suggestedCategory) {
+      setCategory(info.suggestedCategory as ProductCategory);
+    }
+    if (info.suggestedBrand) {
+      setBrand(info.suggestedBrand);
+    }
+    const days = getDefaultExpirationDays(info.suggestedCategory || 'alimentos') ?? 180;
+    setExpirationDate(getDefaultDate(days));
+    setStep('form');
+  }
+
+  function getDefaultDate(daysFromNow: number): string {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toISOString().split('T')[0];
   }
 
   async function handleSave() {
@@ -128,7 +128,7 @@ export default function ScannerPage() {
         });
       }
 
-      // Parse expiration date - handle empty string gracefully
+      // Parse expiration date
       let expDate: Date | null = null;
       if (expirationDate && expirationDate.trim() !== '') {
         const parsed = new Date(expirationDate + 'T12:00:00');
@@ -152,9 +152,7 @@ export default function ScannerPage() {
       setStep('success');
     } catch (err: any) {
       console.error('[Scanner] Erro ao salvar:', err);
-      // Show friendly error
-      const msg = err?.message || 'Erro desconhecido';
-      alert('Erro ao salvar: ' + msg + '\n\nTente novamente.');
+      alert('Erro ao salvar: ' + (err?.message || 'Erro desconhecido') + '\n\nTente novamente.');
     }
   }
 
@@ -168,15 +166,13 @@ export default function ScannerPage() {
   }
 
   function goToForm() {
-    // Go directly to manual form
     setBarcode('');
-    setStep('not_found');
+    setStep('form');
   }
 
   function resetScanner() {
     setStep('scanning');
     setBarcode('');
-    setBarcodeType('');
     setName('');
     setBrand('');
     setCategory('alimentos');
@@ -185,11 +181,15 @@ export default function ScannerPage() {
     setExpirationDate('');
     setLocation((settings.defaultLocation as PantryLocation) || 'despensa');
     setNotes('');
-    setIsManualCategory(false);
   }
 
-  // ---- Render ----
+  // Expiration info for display
+  const expiryInfo = useMemo(() => {
+    if (!expirationDate) return null;
+    return formatExpirationInfo(expirationDate);
+  }, [expirationDate]);
 
+  // ---- RENDER: Scanning ----
   if (step === 'scanning') {
     return (
       <>
@@ -198,7 +198,7 @@ export default function ScannerPage() {
         {/* Bottom buttons */}
         <div className="fixed bottom-24 inset-x-0 z-50 flex flex-col items-center gap-3 px-4">
           <button
-            onClick={() => goToForm()}
+            onClick={goToForm}
             className="w-full max-w-xs py-3 bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-200 rounded-full text-sm font-medium backdrop-blur-sm shadow-lg"
           >
             📝 Cadastrar produto manualmente
@@ -215,13 +215,18 @@ export default function ScannerPage() {
         {showManualEntry && (
           <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Código manual</h3>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Código manual</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Digite o código de barras do produto
+              </p>
               <input
                 type="text"
-                placeholder="Digite o código de barras"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="Ex: 7891234567890"
                 value={manualCode}
-                onChange={(e) => setManualCode(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white mb-4"
+                onChange={(e) => setManualCode(e.target.value.replace(/[^0-9]/g, ''))}
+                className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white text-center text-lg font-mono tracking-wider mb-4"
                 autoFocus
               />
               <div className="flex gap-3">
@@ -233,7 +238,8 @@ export default function ScannerPage() {
                 </button>
                 <button
                   onClick={handleManualSubmit}
-                  className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl"
+                  disabled={!manualCode.trim()}
+                  className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl disabled:opacity-50"
                 >
                   Buscar
                 </button>
@@ -245,12 +251,16 @@ export default function ScannerPage() {
     );
   }
 
+  // ---- RENDER: Loading ----
   if (step === 'loading') {
     return (
       <div className="fixed inset-0 z-50 bg-white dark:bg-gray-950 flex flex-col items-center justify-center gap-4">
         <Loader2 size={48} className="text-brand-600 animate-spin" />
         <p className="text-gray-600 dark:text-gray-300">Buscando produto...</p>
         <p className="text-xs text-gray-400 font-mono">{barcode}</p>
+        {barcodeInfo?.isBrazilian && (
+          <p className="text-xs text-green-600 dark:text-green-400">🇧🇷 Produto brasileiro detectado</p>
+        )}
         <button
           onClick={resetScanner}
           className="mt-4 px-6 py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl text-sm font-medium flex items-center gap-2"
@@ -261,6 +271,7 @@ export default function ScannerPage() {
     );
   }
 
+  // ---- RENDER: Success ----
   if (step === 'success') {
     return (
       <div className="fixed inset-0 z-50 bg-white dark:bg-gray-950 flex flex-col items-center justify-center gap-4 p-6">
@@ -271,6 +282,11 @@ export default function ScannerPage() {
         <p className="text-gray-500 dark:text-gray-400 text-center">
           {name} foi salvo na despensa.
         </p>
+        {expirationDate && expiryInfo && (
+          <p className={`text-sm font-medium text-${expiryInfo.color}-600`}>
+            {expiryInfo.label}
+          </p>
+        )}
         <div className="flex gap-3 mt-4 w-full max-w-xs">
           <button
             onClick={resetScanner}
@@ -289,7 +305,7 @@ export default function ScannerPage() {
     );
   }
 
-  // Form (found or not_found with manual data)
+  // ---- RENDER: Form (found or manual) ----
   return (
     <div className="fixed inset-0 z-50 bg-white dark:bg-gray-950 overflow-y-auto">
       {/* Header */}
@@ -302,10 +318,12 @@ export default function ScannerPage() {
         </button>
         <div className="flex-1">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            {step === 'not_found' ? 'Cadastrar produto' : 'Produto encontrado'}
+            {barcode ? 'Produto encontrado' : 'Cadastrar produto'}
           </h2>
           {barcode && (
-            <p className="text-xs text-gray-400 font-mono">{barcode}</p>
+            <p className="text-xs text-gray-400 font-mono flex items-center gap-1">
+              <Barcode size={12} /> {barcode}
+            </p>
           )}
         </div>
         <button
@@ -317,18 +335,43 @@ export default function ScannerPage() {
       </div>
 
       <div className="p-4 max-w-lg mx-auto space-y-4 pb-24">
-        {/* Info banner */}
-        {step === 'not_found' && (
-          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-2">
-            <AlertTriangle size={18} className="text-amber-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
-                Produto não encontrado nas bases de dados
-              </p>
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                Preencha os dados abaixo. Da próxima vez que escanear este código, o produto será reconhecido automaticamente.
-              </p>
+        {/* Barcode info banner */}
+        {barcode && barcodeInfo && (
+          <div className={`p-3 rounded-xl border ${
+            barcodeInfo.isBrazilian
+              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+              : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+          }`}>
+            <div className="flex items-center gap-2">
+              {barcodeInfo.isBrazilian ? (
+                <span className="text-lg">🇧🇷</span>
+              ) : (
+                <span className="text-lg">🌍</span>
+              )}
+              <div>
+                <p className={`text-sm font-medium ${
+                  barcodeInfo.isBrazilian
+                    ? 'text-green-800 dark:text-green-200'
+                    : 'text-blue-800 dark:text-blue-200'
+                }`}>
+                  {barcodeInfo.description}
+                </p>
+                {barcodeInfo.suggestedBrand && !brand && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Possível marca: {barcodeInfo.suggestedBrand}
+                  </p>
+                )}
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* Not found notice */}
+        {!barcode && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+            <p className="text-sm text-amber-800 dark:text-amber-200">
+              📝 Preencha os dados do produto. Da próxima vez que escanear este código, será reconhecido automaticamente.
+            </p>
           </div>
         )}
 
@@ -355,7 +398,12 @@ export default function ScannerPage() {
 
         {/* Brand */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Marca</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <span className="flex items-center gap-1.5">
+              <Tag size={14} />
+              Marca
+            </span>
+          </label>
           <input
             type="text"
             value={brand}
@@ -374,8 +422,9 @@ export default function ScannerPage() {
               const newCat = e.target.value as ProductCategory;
               setCategory(newCat);
               // Auto-update expiration date when category changes
-              if (!expirationDate || expirationDate === getDefaultExpiration(category)) {
-                setExpirationDate(getDefaultExpiration(newCat));
+              if (!expirationDate) {
+                const days = getDefaultExpirationDays(newCat);
+                setExpirationDate(days ? getDefaultDate(days) : '');
               }
             }}
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
@@ -405,23 +454,19 @@ export default function ScannerPage() {
             onChange={(e) => setExpirationDate(e.target.value)}
             className="w-full px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:outline-none"
           />
-          {expirationDate && (
-            <p className="text-xs text-gray-400 mt-1">
-              {(() => {
-                const exp = new Date(expirationDate + 'T12:00:00');
-                const now = new Date();
-                const diff = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                if (diff < 0) return '⚠️ Já vencido';
-                if (diff === 0) return '🔴 Vence hoje';
-                if (diff <= 7) return `🟠 Vence em ${diff} dias`;
-                if (diff <= 30) return `🟡 Vence em ${diff} dias`;
-                return `🟢 Vence em ${diff} dias`;
-              })()}
+          {expiryInfo && (
+            <p className={`text-xs mt-1 font-medium ${
+              expiryInfo.color === 'red' ? 'text-red-600' :
+              expiryInfo.color === 'orange' ? 'text-orange-600' :
+              expiryInfo.color === 'yellow' ? 'text-yellow-600' :
+              'text-green-600'
+            }`}>
+              {expiryInfo.label}
             </p>
           )}
-          {!expirationDate && (
+          {!expirationDate && category !== 'descartaveis' && (
             <p className="text-xs text-gray-400 mt-1">
-              {category === 'descartaveis' ? 'Sem data de validade' : 'Adicione a data da embalagem'}
+              Adicione a data da embalagem
             </p>
           )}
         </div>
@@ -432,14 +477,14 @@ export default function ScannerPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 active:scale-90 transition-all"
+              className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 active:scale-90 transition-all text-xl font-bold"
             >
-              -
+              −
             </button>
-            <span className="text-xl font-bold text-gray-900 dark:text-white w-12 text-center">{quantity}</span>
+            <span className="text-2xl font-bold text-gray-900 dark:text-white w-16 text-center">{quantity}</span>
             <button
               onClick={() => setQuantity(quantity + 1)}
-              className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 active:scale-90 transition-all"
+              className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 active:scale-90 transition-all text-xl font-bold"
             >
               +
             </button>
@@ -448,7 +493,12 @@ export default function ScannerPage() {
 
         {/* Location */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Local</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <span className="flex items-center gap-1.5">
+              <MapPin size={14} />
+              Local
+            </span>
+          </label>
           <select
             value={location}
             onChange={(e) => setLocation(e.target.value as PantryLocation)}
