@@ -3,6 +3,10 @@ const path = require('path');
 
 const distDir = path.join(__dirname, '..', 'dist');
 
+// Create .nojekyll for GitHub Pages
+fs.writeFileSync(path.join(distDir, '.nojekyll'), '');
+console.log('✅ .nojekyll created');
+
 // Fix manifest.webmanifest
 const manifest = {
   name: 'Despensa - Controle de Estoque',
