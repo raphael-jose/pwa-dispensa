@@ -158,6 +158,15 @@ export default function ScannerPage() {
 
   function handleManualSubmit() {
     if (manualCode.trim()) {
+      // Reset form fields before processing
+      setName('');
+      setBrand('');
+      setCategory('alimentos');
+      setImageUrl('');
+      setQuantity(1);
+      setExpirationDate('');
+      setNotes('');
+
       setBarcode(manualCode.trim());
       processBarcode(manualCode.trim());
       setShowManualEntry(false);
@@ -166,7 +175,16 @@ export default function ScannerPage() {
   }
 
   function goToForm() {
+    // Reset all form fields when going to manual entry
     setBarcode('');
+    setName('');
+    setBrand('');
+    setCategory('alimentos');
+    setImageUrl('');
+    setQuantity(1);
+    setExpirationDate(getDefaultDate(180)); // Default 180 days for alimentos
+    setLocation((settings.defaultLocation as PantryLocation) || 'despensa');
+    setNotes('');
     setStep('form');
   }
 
@@ -241,9 +259,12 @@ export default function ScannerPage() {
                   disabled={!manualCode.trim()}
                   className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl disabled:opacity-50"
                 >
-                  Buscar
+                  Cadastrar
                 </button>
               </div>
+              <p className="text-xs text-gray-400 mt-3 text-center">
+                O código será salvo para reconhecimento futuro
+              </p>
             </div>
           </div>
         )}
