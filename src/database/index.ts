@@ -209,25 +209,31 @@ export async function updateSettings(updates: Partial<AppSettings>): Promise<voi
 // ==================== Sync Queue ====================
 
 async function addToSyncQueue(action: SyncQueueItem['action'], table: SyncQueueItem['table'], data: unknown): Promise<void> {
-  // Serialize dates to ISO strings for safe storage
-  const serialized = JSON.parse(JSON.stringify(data, (_key, value) => {
-    if (value instanceof Date) return value.toISOString();
-    return value;
-  }));
-  await db.syncQueue.add({
-    action,
-    table,
-    data: serialized,
-    createdAt: new Date(),
-    synced: false
-  });
+  try {
+    // Serialize dates to ISO strings for safe storage
+    const serialized = JSON.parse(JSON.stringify(data, (_key, value) => {
+      if (value instanceof Date) return value.toISOString();
+      return value;
+    }));
+    await db.syncQueue.add({
+      action,
+      table,
+      data: serialized,
+      createdAt: new Date(),
+      synced: false
+    });
+  } catch (err) {
+    // Sync queue failure should not block the main operation
+    console.warn('[DB] Erro ao adicionar à fila de sync:', err);
+  }
 }
 
 export async function getPendingSyncItems(): Promise<SyncQueueItem[]> {
-  return db.syncQueue.where('synced').equals(0).toArray();
+  return db.syncQueue.filter(item => !item.synced).toArray();
 }
 
 export async function markSynced(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
   await db.syncQueue.where('id').anyOf(ids).modify({ synced: true });
 }
 
