@@ -60,15 +60,17 @@ export default function ScannerPage() {
     setSaveError('');
     setDataSource('');
 
-    // Validate barcode length - EAN-13 should be 13 digits
+    // Validate barcode length
     if (code.length < 8) {
-      console.warn('[Scanner] Código muito curto, pode ser leitura incorreta:', code);
-      setDataSource('⚠️ Código muito curto — pode ser leitura incorreta');
+      console.warn('[Scanner] Código muito curto:', code);
+      setDataSource('⚠️ Código muito curto');
       resetFormForNewProduct(code);
       return;
     }
 
-    // 1. Check local DB first (previously saved products)
+    const isBrazilian = code.startsWith('789') || code.startsWith('790');
+
+    // 1. Check local DB first (products the user already saved)
     try {
       const localProduct = await getProductByBarcode(code);
       if (localProduct) {
@@ -87,7 +89,17 @@ export default function ScannerPage() {
       console.warn('[Scanner] Erro ao buscar local:', err);
     }
 
-    // 2. Try external APIs
+    // 2. For Brazilian products (789/790): skip external APIs
+    //    They almost never have correct data for cleaning/hygiene products.
+    //    Just open the form empty so the user types the correct name.
+    if (isBrazilian) {
+      console.log('[Scanner] Produto brasileiro — abrindo formulário vazio');
+      setDataSource('produto_brasileiro');
+      resetFormForNewProduct(code);
+      return;
+    }
+
+    // 3. For international products: try external APIs
     try {
       const result = await lookupProduct(code);
       if (result.found) {
@@ -107,8 +119,8 @@ export default function ScannerPage() {
       console.error('[Scanner] Erro na busca:', err);
     }
 
-    // 3. Not found - open empty form
-    console.log('[Scanner] ❌ Produto não encontrado em nenhuma base');
+    // 4. Not found
+    console.log('[Scanner] ❌ Produto não encontrado');
     setDataSource('nao_encontrado');
     resetFormForNewProduct(code);
   }
@@ -242,6 +254,7 @@ export default function ScannerPage() {
       case 'openbeautyfacts': return { text: '🧴 Open Beauty Facts', color: 'purple' };
       case 'openproductsfacts': return { text: '📦 Open Products Facts', color: 'blue' };
       case 'prefix_hint': return { text: '🏷️ Apenas sugestão pelo prefixo', color: 'yellow' };
+      case 'produto_brasileiro': return { text: '🇧🇷 Produto brasileiro — digite o nome do produto', color: 'green' };
       case 'nao_encontrado': return { text: '❌ Produto não encontrado — cadastre manualmente', color: 'red' };
       default: return null;
     }
