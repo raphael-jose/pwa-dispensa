@@ -99,22 +99,20 @@ export async function lookupProduct(barcode: string): Promise<ProductLookupResul
     console.error('[Provider] API externa erro:', err);
   }
 
-  // 4. Not found anywhere — but suggest brand/category from barcode prefix
-  console.log('[Provider] ❌ Não encontrado em nenhuma base');
+  // 4. Not found anywhere — suggest brand/category from barcode prefix
+  console.log('[Provider] ❌ Não encontrado em nenhuma base (OpenBeautyFacts, OpenProductsFacts, OSCBR, OpenFoodFacts)');
   const suggestedBrand = suggestBrandFromBarcode(barcode);
   const suggestedCategory = suggestCategoryFromBarcode(barcode);
 
-  if (suggestedBrand || suggestedCategory) {
-    return {
-      found: false,
-      barcode,
-      brand: suggestedBrand || '',
-      category: suggestedCategory || 'outros',
-      source: 'prefix_hint'
-    };
-  }
-
-  return { found: false, barcode };
+  // For Brazilian barcodes, default suggestion is 'higiene' (app focus)
+  const isBrazilian = barcode.startsWith('789') || barcode.startsWith('790');
+  return {
+    found: false,
+    barcode,
+    brand: suggestedBrand || '',
+    category: suggestedCategory || (isBrazilian ? 'higiene' : 'outros'),
+    source: 'prefix_hint'
+  };
 }
 
 export function validateBarcode(code: string): { valid: boolean; type: string } {

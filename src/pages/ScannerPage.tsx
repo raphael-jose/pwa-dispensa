@@ -69,8 +69,6 @@ export default function ScannerPage() {
       return;
     }
 
-    const isBrazilian = code.startsWith('789') || code.startsWith('790');
-
     // 1. Check local DB first (products the user already saved)
     try {
       const localProduct = await getProductByBarcode(code);
@@ -81,7 +79,7 @@ export default function ScannerPage() {
         setCategory(localProduct.category);
         setImageUrl(localProduct.imageUrl);
         setDataSource('banco_local');
-        const days = getDefaultExpirationDays(localProduct.category) ?? 180;
+        const days = getDefaultExpirationDays(localProduct.category) ?? 730;
         setExpirationDate(getDefaultDate(days));
         setStep('form');
         return;
@@ -90,17 +88,8 @@ export default function ScannerPage() {
       console.warn('[Scanner] Erro ao buscar local:', err);
     }
 
-    // 2. For Brazilian products (789/790): skip external APIs
-    //    They almost never have correct data for cleaning/hygiene products.
-    //    Just open the form empty so the user types the correct name.
-    if (isBrazilian) {
-      console.log('[Scanner] Produto brasileiro — abrindo formulário vazio');
-      setDataSource('produto_brasileiro');
-      resetFormForNewProduct(code);
-      return;
-    }
-
-    // 3. For international products: try external APIs
+    // 2. Try external APIs for ALL products (including Brazilian 789/790)
+    //    Priority: OpenBeautyFacts → OpenProductsFacts → OSCBR → OpenFoodFacts
     try {
       const result = await lookupProduct(code);
       if (result.found) {
@@ -111,7 +100,7 @@ export default function ScannerPage() {
         setCategory(cat);
         setImageUrl(result.imageUrl || '');
         setDataSource(result.source || 'api');
-        const days = getDefaultExpirationDays(cat) ?? 180;
+        const days = getDefaultExpirationDays(cat) ?? 730;
         setExpirationDate(getDefaultDate(days));
         setStep('form');
         return;
@@ -121,7 +110,7 @@ export default function ScannerPage() {
       logError('Erro ao buscar produto na API', `Barcode: ${code} - ${(err as Error).message}`, 'scanner');
     }
 
-    // 4. Not found
+    // 3. Not found anywhere — open empty form for manual entry
     console.log('[Scanner] ❌ Produto não encontrado');
     setDataSource('nao_encontrado');
     resetFormForNewProduct(code);

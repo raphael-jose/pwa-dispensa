@@ -22,17 +22,17 @@ export interface ProductLookupResult {
 export async function lookupProductByBarcode(barcode: string): Promise<ProductLookupResult> {
   console.log('[API] Iniciando busca para:', barcode);
 
-  // 1. Try Open Food Facts (alimentos)
-  const offResult = await tryAPI(OFF_URL, barcode, 'openfoodfacts');
-  if (offResult.found) return offResult;
-
-  // 2. Try Open Beauty Facts (higiene/limpeza/cosméticos)
+  // 1. Try Open Beauty Facts (higiene, limpeza, cosméticos) — prioridade máxima
   const obfResult = await tryAPI(OBF_URL, barcode, 'openbeautyfacts');
   if (obfResult.found) return obfResult;
 
-  // 3. Try Open Products Facts (produtos gerais)
+  // 2. Try Open Products Facts (descartáveis, produtos gerais)
   const opfResult = await tryAPI(OPF_URL, barcode, 'openproductsfacts');
   if (opfResult.found) return opfResult;
+
+  // 3. Try Open Food Facts por último (alimentos — menor prioridade neste app)
+  const offResult = await tryAPI(OFF_URL, barcode, 'openfoodfacts');
+  if (offResult.found) return offResult;
 
   console.log('[API] Produto não encontrado em nenhuma base');
   return { found: false, barcode };
