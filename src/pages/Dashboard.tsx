@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Package, CheckCircle, AlertTriangle, Clock, XCircle, Search, Camera } from 'lucide-react';
+import { Package, CheckCircle, AlertTriangle, Clock, XCircle, Search, Camera, ShoppingCart, Warehouse, BarChart3 } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { getDashboardStats, getAllPantryItems, getExpiryStatus, db } from '@/database';
 import type { PantryItem } from '@/types';
@@ -42,18 +42,18 @@ export default function Dashboard() {
   }
 
   const statCards = [
-    { icon: Package, label: 'Total de itens', value: stats.totalItems, color: 'text-brand-600', bg: 'bg-brand-50 dark:bg-brand-900/20' },
-    { icon: CheckCircle, label: 'Em dia', value: stats.emDia, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-900/20' },
-    { icon: Clock, label: 'Vencendo', value: stats.vencendo + stats.critico, color: 'text-yellow-600', bg: 'bg-yellow-50 dark:bg-yellow-900/20' },
-    { icon: XCircle, label: 'Vencidos', value: stats.vencidos, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20' }
+    { icon: Package, label: 'Total', value: stats.totalItems, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-100 dark:border-emerald-800/30' },
+    { icon: CheckCircle, label: 'Em dia', value: stats.emDia, color: 'text-green-600', bg: 'bg-green-50 dark:bg-green-900/20', border: 'border-green-100 dark:border-green-800/30' },
+    { icon: AlertTriangle, label: 'Vencendo', value: stats.vencendo + stats.critico, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20', border: 'border-amber-100 dark:border-amber-800/30' },
+    { icon: XCircle, label: 'Vencidos', value: stats.vencidos, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', border: 'border-red-100 dark:border-red-800/30' }
   ];
 
   const expiryColorMap: Record<string, string> = {
-    red: 'border-l-red-500 bg-red-50 dark:bg-red-900/20',
-    orange: 'border-l-orange-500 bg-orange-50 dark:bg-orange-900/20',
-    yellow: 'border-l-yellow-500 bg-yellow-50 dark:bg-yellow-900/20',
-    green: 'border-l-green-500 bg-green-50 dark:bg-green-900/20',
-    gray: 'border-l-gray-400 bg-gray-50 dark:bg-gray-800'
+    red: 'border-l-red-500 bg-red-50/80 dark:bg-red-900/15',
+    orange: 'border-l-orange-500 bg-orange-50/80 dark:bg-orange-900/15',
+    yellow: 'border-l-yellow-500 bg-yellow-50/80 dark:bg-yellow-900/15',
+    green: 'border-l-green-500 bg-green-50/80 dark:bg-green-900/15',
+    gray: 'border-l-gray-400 bg-gray-50 dark:bg-gray-800/50'
   };
 
   const expiryDotMap: Record<string, string> = {
@@ -66,32 +66,44 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 pb-24">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Minha Despensa</h1>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+          <Warehouse size={22} className="text-emerald-600 dark:text-emerald-400" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Minha Despensa</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{stats.totalUniqueItems} produtos cadastrados</p>
+        </div>
+      </div>
 
       {/* Action buttons */}
       <div className="flex gap-3">
         <button
           onClick={() => setCurrentPage('pantry')}
-          className="flex-1 flex items-center justify-center gap-2 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow"
+          className="flex-1 flex items-center justify-center gap-2.5 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700/50 hover:shadow-md transition-all active:scale-[0.98]"
         >
-          <Search size={20} className="text-brand-600" />
+          <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+            <Search size={18} className="text-blue-600 dark:text-blue-400" />
+          </div>
           <span className="font-medium text-gray-700 dark:text-gray-200">Buscar</span>
         </button>
         <button
           onClick={() => setScannerOpen(true)}
-          className="flex-1 flex items-center justify-center gap-2 p-4 bg-brand-600 text-white rounded-2xl shadow-sm hover:bg-brand-700 transition-colors"
+          className="flex-1 flex items-center justify-center gap-2.5 p-4 bg-emerald-600 text-white rounded-2xl shadow-sm hover:bg-emerald-700 transition-colors active:scale-[0.98]"
         >
-          <Camera size={20} />
+          <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+            <Camera size={18} />
+          </div>
           <span className="font-medium">Escanear</span>
         </button>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3">
-        {statCards.map(({ icon: Icon, label, value, color, bg }) => (
-          <div key={label} className={`p-4 rounded-2xl ${bg}`}>
-            <div className="flex items-center gap-2 mb-1">
-              <Icon size={18} className={color} />
+        {statCards.map(({ icon: Icon, label, value, color, bg, border }) => (
+          <div key={label} className={`p-4 rounded-2xl ${bg} border ${border} transition-all`}>
+            <div className="flex items-center gap-2 mb-2">
+              <Icon size={16} className={color} />
               <span className="text-xs font-medium text-gray-500 dark:text-gray-400">{label}</span>
             </div>
             <p className={`text-2xl font-bold ${color}`}>{value}</p>
@@ -102,36 +114,39 @@ export default function Dashboard() {
       {/* Upcoming expiry */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Próximos vencimentos</h2>
+          <div className="flex items-center gap-2">
+            <Clock size={18} className="text-gray-400" />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Próximos vencimentos</h2>
+          </div>
           <button
             onClick={() => setCurrentPage('pantry')}
-            className="text-sm text-brand-600 font-medium"
+            className="text-sm text-emerald-600 dark:text-emerald-400 font-medium"
           >
             Ver todos
           </button>
         </div>
 
         {upcoming.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            <Package size={32} className="mx-auto mb-2 opacity-50" />
-            <p>Nenhum produto com validade cadastrada</p>
+          <div className="text-center py-8 text-gray-400 dark:text-gray-500">
+            <Package size={32} className="mx-auto mb-2 opacity-40" />
+            <p className="text-sm">Nenhum produto com validade cadastrada</p>
           </div>
         ) : (
           <div className="space-y-2">
             {upcoming.map(({ item, product, expiry }) => (
               <div
                 key={item.id}
-                className={`flex items-center gap-3 p-3 rounded-xl border-l-4 ${expiryColorMap[expiry.color]}`}
+                className={`flex items-center gap-3 p-3.5 rounded-xl border-l-4 ${expiryColorMap[expiry.color]} transition-all`}
               >
-                <div className={`w-3 h-3 rounded-full ${expiryDotMap[expiry.color]}`} />
+                <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${expiryDotMap[expiry.color]}`} />
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900 dark:text-white truncate">
+                  <p className="font-medium text-gray-900 dark:text-white truncate text-sm">
                     {product?.name || 'Produto'}
                   </p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{expiry.label}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{expiry.label}</p>
                 </div>
                 {item.quantity > 1 && (
-                  <span className="text-xs bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-full">
+                  <span className="text-xs bg-gray-200/80 dark:bg-gray-700/80 px-2 py-1 rounded-full font-medium text-gray-600 dark:text-gray-300">
                     x{item.quantity}
                   </span>
                 )}

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Home, Package, Camera, Clock, Settings } from 'lucide-react';
+import { Home, Package, ScanBarcode, Clock, Settings, Warehouse, CloudOff, Cloud, RefreshCw } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { getAllProducts, getAllPantryItems, getSettings, db } from '@/database';
 import { startAutoSync } from '@/sync';
@@ -12,7 +12,7 @@ import SettingsPage from '@/pages/SettingsPage';
 const NAV_ITEMS = [
   { id: 'dashboard', icon: Home, label: 'Início' },
   { id: 'pantry', icon: Package, label: 'Despensa' },
-  { id: 'scanner', icon: Camera, label: 'Escanear', isSpecial: true },
+  { id: 'scanner', icon: ScanBarcode, label: 'Escanear', isSpecial: true },
   { id: 'history', icon: Clock, label: 'Histórico' },
   { id: 'settings', icon: Settings, label: 'Config' }
 ];
@@ -66,22 +66,32 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-colors duration-200">
       {/* Status bar */}
-      <div className="sticky top-0 z-30 px-4 py-2 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
+      <div className="sticky top-0 z-30 px-4 py-2.5 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🏠</span>
-            <span className="font-bold text-gray-900 dark:text-white">Despensa</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center">
+              <Warehouse size={18} className="text-white" />
+            </div>
+            <span className="font-bold text-gray-900 dark:text-white text-base">Despensa</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${
-              syncStatus === 'synced' ? 'bg-green-100 text-green-700' :
-              syncStatus === 'syncing' ? 'bg-yellow-100 text-yellow-700' :
-              'bg-red-100 text-red-700'
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+              syncStatus === 'synced' 
+                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' 
+                : syncStatus === 'syncing' 
+                ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+                : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300'
             }`}>
-              {syncStatus === 'synced' ? '🟢' : syncStatus === 'syncing' ? '🟡' : '🔴'}
-            </span>
+              {syncStatus === 'synced' ? (
+                <><Cloud size={12} /> Online</>
+              ) : syncStatus === 'syncing' ? (
+                <><RefreshCw size={12} className="animate-spin" /> Sync...</>
+              ) : (
+                <><CloudOff size={12} /> Offline</>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -103,7 +113,7 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => setScannerOpen(true)}
-                  className="relative -mt-6 w-14 h-14 bg-brand-600 text-white rounded-full shadow-lg shadow-brand-600/30 flex items-center justify-center hover:bg-brand-700 active:scale-95 transition-all"
+                  className="relative -mt-6 w-14 h-14 bg-emerald-600 text-white rounded-full shadow-lg shadow-emerald-600/30 flex items-center justify-center hover:bg-emerald-700 active:scale-95 transition-all"
                 >
                   <Icon size={24} />
                 </button>
@@ -115,10 +125,10 @@ export default function App() {
                 key={item.id}
                 onClick={() => setCurrentPage(item.id)}
                 className={`flex flex-col items-center gap-0.5 px-3 py-1 transition-colors ${
-                  active ? 'text-brand-600' : 'text-gray-400'
+                  active ? 'text-emerald-600' : 'text-gray-400 dark:text-gray-500'
                 }`}
               >
-                <Icon size={20} />
+                <Icon size={20} strokeWidth={active ? 2.5 : 1.8} />
                 <span className="text-[10px] font-medium">{item.label}</span>
               </button>
             );

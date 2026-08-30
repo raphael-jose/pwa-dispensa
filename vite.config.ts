@@ -18,7 +18,7 @@ export default defineConfig({
         short_name: 'Despensa',
         description: 'Controle inteligente de despensa com leitor de código de barras',
         theme_color: '#059669',
-        background_color: '#f0fdf4',
+        background_color: '#f9fafb',
         display: 'standalone',
         orientation: 'portrait',
         scope: '/pwa-dispensa/',
