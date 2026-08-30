@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const distDir = path.join(__dirname, '..', 'dist');
+const rootDir = path.join(__dirname, '..');
 
 // Create .nojekyll for GitHub Pages
 fs.writeFileSync(path.join(distDir, '.nojekyll'), '');
@@ -27,19 +28,66 @@ const manifest = {
 fs.writeFileSync(path.join(distDir, 'manifest.webmanifest'), JSON.stringify(manifest, null, 2));
 console.log('✅ manifest.webmanifest fixed');
 
-// Fix index.html - replace absolute paths with base-prefixed paths
+// Fix index.html - use relative paths (./assets/...) instead of absolute
 const htmlPath = path.join(distDir, 'index.html');
 let html = fs.readFileSync(htmlPath, 'utf-8');
 
-// Fix asset paths: src="/assets/..." -> src="/pwa-dispensa/assets/..."
-// Fix registerSW: src="/registerSW.js" -> src="/pwa-dispensa/registerSW.js"
-// Fix manifest link: href="/manifest.webmanifest" -> href="/pwa-dispensa/manifest.webmanifest"
-html = html.replace(/(src|href)=\"\/assets\//g, '$1="/pwa-dispensa/assets/');
-html = html.replace(/(src|href)=\"\/registerSW\.js\"/g, '$1="/pwa-dispensa/registerSW.js"');
-html = html.replace(/href=\"\/manifest\.webmanifest\"/g, 'href="/pwa-dispensa/manifest.webmanifest"');
+// Fix asset paths to be relative: /pwa-dispensa/assets/... -> ./assets/...
+html = html.replace(/\/pwa-dispensa\/assets\//g, './assets/');
+html = html.replace(/\/pwa-dispensa\/manifest\.webmanifest/g, './manifest.webmanifest');
+html = html.replace(/\/pwa-dispensa\/registerSW\.js/g, './registerSW.js');
 
-// Remove duplicate manifest link (keep only the one with correct path)
-html = html.replace(/<link rel="manifest" href="\.\/manifest\.webmanifest" \/>\n/, '');
+// Also fix any bare /assets/ paths
+html = html.replace(/(src|href)="\/assets\//g, '$1="./assets/');
+
+// Remove duplicate manifest links
+const seen = new Set();
+html = html.replace(/<link rel="manifest" href="[^"]*"\/?>\s*\n?/g, (match) => {
+  if (seen.has('manifest')) return '';
+  seen.add('manifest');
+  return match;
+});
 
 fs.writeFileSync(htmlPath, html);
-console.log('✅ index.html paths fixed');
+console.log('✅ index.html paths fixed (relative)');
+
+// Also fix the root index.html if it exists
+const rootHtmlPath = path.join(rootDir, 'index.html');
+if (fs.existsSync(rootHtmlPath)) {
+  let rootHtml = fs.readFileSync(rootHtmlPath, 'utf-8');
+  rootHtml = rootHtml.replace(/\/pwa-dispensa\/assets\//g, './assets/');
+  rootHtml = rootHtml.replace(/\/pwa-dispensa\/manifest\.webmanifest/g, './manifest.webmanifest');
+  rootHtml = rootHtml.replace(/\/pwa-dispensa\/registerSW\.js/g, './registerSW.js');
+  fs.writeFileSync(rootHtmlPath, rootHtml);
+  console.log('✅ root index.html paths fixed');
+}
+
+// Copy critical files to root for GitHub Pages
+const filesToCopy = ['index.html', 'sw.js', 'registerSW.js', 'manifest.webmanifest'];
+const workboxFiles = fs.readdirSync(distDir).filter(f => f.startsWith('workbox-'));
+
+[...filesToCopy, ...workboxFiles].forEach(file => {
+  const src = path.join(distDir, file);
+  const dest = path.join(rootDir, file);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, dest);
+    console.log(`✅ Copied ${file} to root`);
+  }
+});
+
+// Copy assets directory to root
+const rootAssetsDir = path.join(rootDir, 'assets');
+const distAssetsDir = path.join(distDir, 'assets');
+if (fs.existsSync(distAssetsDir)) {
+  if (!fs.existsSync(rootAssetsDir)) fs.mkdirSync(rootAssetsDir, { recursive: true });
+  fs.readdirSync(distAssetsDir).forEach(file => {
+    fs.copyFileSync(path.join(distAssetsDir, file), path.join(rootAssetsDir, file));
+  });
+  console.log('✅ Copied assets/ to root');
+}
+
+// Copy .nojekyll to root
+fs.writeFileSync(path.join(rootDir, '.nojekyll'), '');
+console.log('✅ .nojekyll copied to root');
+
+console.log('\n🎉 Deploy ready!');

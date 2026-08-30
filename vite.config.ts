@@ -29,9 +29,19 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globPatterns: ['**/*.{js,css,ico,png,svg,woff2}'],
         navigateFallback: 'index.html',
+        skipWaiting: true,
+        clientsClaim: true,
         runtimeCaching: [
+          {
+            urlPattern: /^https?:\/\/raphael-jose\.github\.io\/pwa-dispensa\/?$/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-cache',
+              networkTimeoutSeconds: 3
+            }
+          },
           {
             urlPattern: /^https:\/\/world\.openfoodfacts\.org\/api\/.*/i,
             handler: 'NetworkFirst',

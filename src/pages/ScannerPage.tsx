@@ -39,13 +39,14 @@ export default function ScannerPage() {
   }
 
   async function processBarcode(code: string) {
+    console.log('[Scanner] processBarcode called with:', code);
     setStep('loading');
 
     // Check local DB first
     try {
       const localProduct = await getProductByBarcode(code);
       if (localProduct) {
-        console.log('[Scanner] Produto encontrado localmente:', localProduct.name);
+        console.log('[Scanner] ✅ Produto encontrado localmente:', localProduct.name, 'barcode:', localProduct.barcode);
         setName(localProduct.name);
         setBrand(localProduct.brand);
         setCategory(localProduct.category);
@@ -63,7 +64,7 @@ export default function ScannerPage() {
     try {
       const result = await lookupProduct(code);
       if (result.found) {
-        console.log('[Scanner] Produto encontrado via API:', result.name, 'fonte:', result.source);
+        console.log('[Scanner] ✅ Produto encontrado via API:', result.name, 'fonte:', result.source);
         setName(result.name || '');
         setBrand(result.brand || '');
         const cat = (result.category as ProductCategory) || 'alimentos';
@@ -79,6 +80,7 @@ export default function ScannerPage() {
     }
 
     // Not found - go to form with smart defaults from barcode analysis
+    console.log('[Scanner] ❌ Produto não encontrado, abrindo formulário vazio');
     const info = analyzeBarcode(code);
     if (info.suggestedCategory) {
       setCategory(info.suggestedCategory as ProductCategory);
