@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore';
 import { getSettings, updateSettings, getAllProducts } from '@/database';
 import { parseCSV, importProducts, getCSVTemplate } from '@/utils/csvImport';
 import { getCredentials, saveCredentials, hasCredentials, lookupByGTIN } from '@/services/osccbr';
+import { clearLocalCache } from '@/services/productProvider';
 import type { AppSettings, PantryLocation } from '@/types';
 
 export default function SettingsPage() {
@@ -381,6 +382,26 @@ export default function SettingsPage() {
           <p className="text-xs text-gray-400">
             Colunas aceitas: barcode, nome, marca, categoria, validade, quantidade, local, observacoes
           </p>
+        </div>
+      </Section>
+
+      {/* Cache */}
+      <Section title="Cache de produtos">
+        <div className="p-4 space-y-2">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Se produtos estão sendo identificados com nomes errados ao escanear, limpe o cache para forçar nova consulta.
+          </p>
+          <button
+            onClick={() => {
+              if (confirm('Limpar cache de produtos? Produtos salvos NÃO serão apagados.')) {
+                clearLocalCache();
+                alert('Cache limpo! Da próxima vez que escanear, o app vai consultar a API novamente.');
+              }
+            }}
+            className="w-full py-2.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-xl font-medium text-sm"
+          >
+            🧹 Limpar cache de produtos
+          </button>
         </div>
       </Section>
 

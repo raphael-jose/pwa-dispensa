@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import { X, ArrowLeft, Check, Loader2, Calendar, Barcode, Tag, MapPin } from 'lucide-react';
+import { useState, useMemo, useCallback, useRef } from 'react';
+import { X, ArrowLeft, ArrowRight, Check, Loader2, Calendar, Barcode, Tag, MapPin, RefreshCw, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { createProduct, createPantryItem, getProductByBarcode } from '@/database';
 import { lookupProduct, saveToLocalCache } from '@/services/productProvider';
@@ -16,6 +16,7 @@ export default function ScannerPage() {
   const [manualCode, setManualCode] = useState('');
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [dataSource, setDataSource] = useState<string>('');
 
   // Product data
   const [name, setName] = useState('');
@@ -34,24 +35,49 @@ export default function ScannerPage() {
 
   const handleScan = useCallback((code: string) => {
     console.log('[Scanner] Código lido:', code);
+    // Always reset everything before processing new scan
+    resetAllFields();
     setBarcode(code);
     processBarcode(code);
   }, []);
+
+  function resetAllFields() {
+    setDataSource('');
+    setName('');
+    setBrand('');
+    setCategory('alimentos');
+    setImageUrl('');
+    setQuantity(1);
+    setExpirationDate('');
+    setLocation((settings.defaultLocation as PantryLocation) || 'despensa');
+    setNotes('');
+    setSaveError('');
+  }
 
   async function processBarcode(code: string) {
     console.log('[Scanner] processBarcode called with:', code);
     setStep('loading');
     setSaveError('');
+    setDataSource('');
 
-    // Check local DB first
+    // Validate barcode length - EAN-13 should be 13 digits
+    if (code.length < 8) {
+      console.warn('[Scanner] Código muito curto, pode ser leitura incorreta:', code);
+      setDataSource('⚠️ Código muito curto — pode ser leitura incorreta');
+      resetFormForNewProduct(code);
+      return;
+    }
+
+    // 1. Check local DB first (previously saved products)
     try {
       const localProduct = await getProductByBarcode(code);
       if (localProduct) {
-        console.log('[Scanner] ✅ Produto encontrado localmente:', localProduct.name);
+        console.log('[Scanner] ✅ Produto encontrado no banco local:', localProduct.name);
         setName(localProduct.name);
         setBrand(localProduct.brand);
         setCategory(localProduct.category);
         setImageUrl(localProduct.imageUrl);
+        setDataSource('banco_local');
         const days = getDefaultExpirationDays(localProduct.category) ?? 180;
         setExpirationDate(getDefaultDate(days));
         setStep('form');
@@ -61,7 +87,7 @@ export default function ScannerPage() {
       console.warn('[Scanner] Erro ao buscar local:', err);
     }
 
-    // Try external APIs
+    // 2. Try external APIs
     try {
       const result = await lookupProduct(code);
       if (result.found) {
@@ -71,6 +97,7 @@ export default function ScannerPage() {
         const cat = (result.category as ProductCategory) || 'outros';
         setCategory(cat);
         setImageUrl(result.imageUrl || '');
+        setDataSource(result.source || 'api');
         const days = getDefaultExpirationDays(cat) ?? 180;
         setExpirationDate(getDefaultDate(days));
         setStep('form');
@@ -80,8 +107,9 @@ export default function ScannerPage() {
       console.error('[Scanner] Erro na busca:', err);
     }
 
-    // Not found - open empty form with smart defaults
-    console.log('[Scanner] ❌ Produto não encontrado, abrindo formulário vazio');
+    // 3. Not found - open empty form
+    console.log('[Scanner] ❌ Produto não encontrado em nenhuma base');
+    setDataSource('nao_encontrado');
     resetFormForNewProduct(code);
   }
 
@@ -166,13 +194,13 @@ export default function ScannerPage() {
     } catch (err: any) {
       console.error('[Scanner] Erro ao salvar:', err);
       setSaveError(err?.message || 'Erro desconhecido ao salvar');
-      // Don't show alert - show error inline instead
       setStep('form');
     }
   }
 
   function handleManualSubmit() {
     if (manualCode.trim()) {
+      resetAllFields();
       setBarcode(manualCode.trim());
       processBarcode(manualCode.trim());
       setShowManualEntry(false);
@@ -181,28 +209,43 @@ export default function ScannerPage() {
   }
 
   function goToForm() {
+    resetAllFields();
     setBarcode('');
     resetFormForNewProduct();
   }
 
   function resetScanner() {
     setStep('scanning');
+    resetAllFields();
     setBarcode('');
-    setName('');
-    setBrand('');
-    setCategory('alimentos');
-    setImageUrl('');
-    setQuantity(1);
-    setExpirationDate('');
-    setLocation((settings.defaultLocation as PantryLocation) || 'despensa');
-    setNotes('');
-    setSaveError('');
+  }
+
+  function rescan() {
+    resetAllFields();
+    setBarcode('');
+    setStep('scanning');
   }
 
   const expiryInfo = useMemo(() => {
     if (!expirationDate) return null;
     return formatExpirationInfo(expirationDate);
   }, [expirationDate]);
+
+  // Source label for display
+  const sourceLabel = useMemo(() => {
+    switch (dataSource) {
+      case 'banco_local': return { text: '📦 Encontrado no banco local', color: 'green' };
+      case 'user_cache': return { text: '💾 Encontrado no cache', color: 'blue' };
+      case 'local_database': return { text: '📱 Base de dados local', color: 'blue' };
+      case 'osccbr': return { text: '🇧🇷 Consulta OSCBR (Brasil)', color: 'green' };
+      case 'openfoodfacts': return { text: '🌍 Open Food Facts', color: 'blue' };
+      case 'openbeautyfacts': return { text: '🧴 Open Beauty Facts', color: 'purple' };
+      case 'openproductsfacts': return { text: '📦 Open Products Facts', color: 'blue' };
+      case 'prefix_hint': return { text: '🏷️ Apenas sugestão pelo prefixo', color: 'yellow' };
+      case 'nao_encontrado': return { text: '❌ Produto não encontrado — cadastre manualmente', color: 'red' };
+      default: return null;
+    }
+  }, [dataSource]);
 
   // ---- RENDER: Scanning ----
   if (step === 'scanning') {
@@ -296,8 +339,8 @@ export default function ScannerPage() {
           </p>
         )}
         <div className="flex gap-3 mt-4 w-full max-w-xs">
-          <button onClick={resetScanner} className="flex-1 py-3 bg-brand-600 text-white rounded-xl font-medium">
-            Escanear outro
+          <button onClick={rescan} className="flex-1 py-3 bg-brand-600 text-white rounded-xl font-medium flex items-center justify-center gap-2">
+            <RefreshCw size={16} /> Escanear outro
           </button>
           <button onClick={() => setScannerOpen(false)} className="flex-1 py-3 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-medium">
             Voltar
@@ -312,12 +355,12 @@ export default function ScannerPage() {
     <div className="fixed inset-0 z-50 bg-white dark:bg-gray-950 overflow-y-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 px-4 py-3 flex items-center gap-3">
-        <button onClick={resetScanner} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+        <button onClick={rescan} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
           <ArrowLeft size={16} className="text-gray-600 dark:text-gray-300" />
         </button>
         <div className="flex-1">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            {barcode ? 'Produto encontrado' : 'Cadastrar produto'}
+            {dataSource === 'nao_encontrado' ? 'Cadastrar produto' : barcode ? 'Confirmar produto' : 'Cadastrar produto'}
           </h2>
           {barcode && (
             <p className="text-xs text-gray-400 font-mono flex items-center gap-1">
@@ -335,6 +378,25 @@ export default function ScannerPage() {
         {saveError && (
           <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
             <p className="text-sm text-red-800 dark:text-red-200">❌ {saveError}</p>
+          </div>
+        )}
+
+        {/* Source indicator */}
+        {sourceLabel && (
+          <div className={`p-3 rounded-xl border ${
+            sourceLabel.color === 'green' ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
+            sourceLabel.color === 'red' ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' :
+            sourceLabel.color === 'yellow' ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' :
+            'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+          }`}>
+            <p className={`text-sm font-medium ${
+              sourceLabel.color === 'green' ? 'text-green-800 dark:text-green-200' :
+              sourceLabel.color === 'red' ? 'text-red-800 dark:text-red-200' :
+              sourceLabel.color === 'yellow' ? 'text-yellow-800 dark:text-yellow-200' :
+              'text-blue-800 dark:text-blue-200'
+            }`}>
+              {sourceLabel.text}
+            </p>
           </div>
         )}
 
@@ -499,14 +561,27 @@ export default function ScannerPage() {
           />
         </div>
 
-        {/* Save button */}
-        <button
-          onClick={handleSave}
-          disabled={!name.trim()}
-          className="w-full py-4 bg-brand-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all shadow-lg shadow-brand-600/20"
-        >
-          Adicionar à despensa
-        </button>
+        {/* Action buttons */}
+        <div className="flex gap-3">
+          {/* Rescan button - show when we have a barcode */}
+          {barcode && (
+            <button
+              onClick={rescan}
+              className="flex-1 py-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
+            >
+              <RefreshCw size={18} /> Ler novamente
+            </button>
+          )}
+
+          {/* Save button */}
+          <button
+            onClick={handleSave}
+            disabled={!name.trim()}
+            className={`${barcode ? 'flex-1' : 'w-full'} py-4 bg-brand-600 text-white rounded-xl font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all shadow-lg shadow-brand-600/20`}
+          >
+            Adicionar à despensa
+          </button>
+        </div>
       </div>
     </div>
   );

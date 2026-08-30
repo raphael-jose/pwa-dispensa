@@ -1,6 +1,6 @@
 import { lookupProductByBarcode, type ProductLookupResult } from './openFoodFacts';
 import { lookupByGTIN, hasCredentials } from './osccbr';
-import { lookupLocalProduct, suggestBrandFromBarcode, suggestCategoryFromBarcode } from './productDatabase';
+import { suggestBrandFromBarcode, suggestCategoryFromBarcode } from './productDatabase';
 
 export type { ProductLookupResult };
 
@@ -26,6 +26,24 @@ export function saveToLocalCache(barcode: string, data: { name: string; brand: s
   }
 }
 
+export function clearLocalCache() {
+  try {
+    localStorage.removeItem(LOCAL_CACHE_KEY);
+  } catch {
+    // Ignore
+  }
+}
+
+export function removeFromLocalCache(barcode: string) {
+  try {
+    const cache = getLocalCache();
+    delete cache[barcode];
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore
+  }
+}
+
 /**
  * ProductProvider - abstraction layer for product lookup.
  * Chain: User Cache → Built-in Database → OSCBR → Open Food Facts → Beauty → Products
@@ -48,22 +66,7 @@ export async function lookupProduct(barcode: string): Promise<ProductLookupResul
     };
   }
 
-  // 2. Check built-in Brazilian product database (instant, no network)
-  const localProduct = lookupLocalProduct(barcode);
-  if (localProduct) {
-    console.log('[Provider] ✅ Base local:', localProduct.name, `(${localProduct.brand})`);
-    return {
-      found: true,
-      barcode,
-      name: localProduct.name,
-      brand: localProduct.brand,
-      category: localProduct.category,
-      imageUrl: '',
-      source: 'local_database'
-    };
-  }
-
-  // 3. Try OSCBR API (if user configured credentials)
+  // 2. Try OSCBR API (if user configured credentials)
   if (hasCredentials()) {
     console.log('[Provider] Tentando OSCBR API...');
     try {
@@ -85,7 +88,7 @@ export async function lookupProduct(barcode: string): Promise<ProductLookupResul
     }
   }
 
-  // 4. Try Open Food Facts → Beauty → Products (international APIs)
+  // 3. Try Open Food Facts → Beauty → Products (international APIs)
   console.log('[Provider] Tentando Open Food Facts...');
   try {
     const result = await lookupProductByBarcode(barcode);
@@ -96,7 +99,7 @@ export async function lookupProduct(barcode: string): Promise<ProductLookupResul
     console.error('[Provider] API externa erro:', err);
   }
 
-  // 5. Not found anywhere — but suggest brand/category from barcode prefix
+  // 4. Not found anywhere — but suggest brand/category from barcode prefix
   console.log('[Provider] ❌ Não encontrado em nenhuma base');
   const suggestedBrand = suggestBrandFromBarcode(barcode);
   const suggestedCategory = suggestCategoryFromBarcode(barcode);
