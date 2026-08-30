@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/appStore';
 import { createProduct, createPantryItem, getProductByBarcode } from '@/database';
 import { lookupProduct, saveToLocalCache } from '@/services/productProvider';
 import { analyzeBarcode, getDefaultExpirationDays, formatExpirationInfo } from '@/utils/barcode';
+import { logError, logInfo } from '@/utils/logger';
 import BarcodeScanner from '@/scanner/BarcodeScanner';
 import type { ProductCategory, PantryLocation } from '@/types';
 
@@ -117,6 +118,7 @@ export default function ScannerPage() {
       }
     } catch (err) {
       console.error('[Scanner] Erro na busca:', err);
+      logError('Erro ao buscar produto na API', `Barcode: ${code} - ${(err as Error).message}`, 'scanner');
     }
 
     // 4. Not found
@@ -205,6 +207,7 @@ export default function ScannerPage() {
       setStep('success');
     } catch (err: any) {
       console.error('[Scanner] Erro ao salvar:', err);
+      logError('Erro ao salvar produto', `Nome: ${name} - ${(err as Error).message}`, 'scanner');
       setSaveError(err?.message || 'Erro desconhecido ao salvar');
       setStep('form');
     }

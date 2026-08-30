@@ -1,4 +1,5 @@
 import { getSupabase, isSupabaseConfigured, getCurrentUser } from '@/services/supabase';
+import { logError, logInfo } from '@/utils/logger';
 import { getPendingSyncItems, markSynced, getAllProducts, getAllPantryItems } from '@/database';
 import type { Product, PantryItem } from '@/types';
 
@@ -53,8 +54,8 @@ export async function syncPendingChanges(): Promise<'synced' | 'error' | 'offlin
             { onConflict: 'id' }
           );
         }
-      } catch {
-        // Continue with other items
+      } catch (err) {
+        logError(`Erro ao sincronizar item: ${item.action} ${item.table}`, (err as Error).message, 'sync');
       }
     }
 
@@ -65,7 +66,8 @@ export async function syncPendingChanges(): Promise<'synced' | 'error' | 'offlin
     }
 
     return 'synced';
-  } catch {
+  } catch (err) {
+    logError('Erro na sincronização', (err as Error).message, 'sync');
     return 'error';
   }
 }
@@ -110,7 +112,8 @@ export async function fullSync(): Promise<'synced' | 'error' | 'offline' | 'not_
     // For now, we just push local changes
 
     return 'synced';
-  } catch {
+  } catch (err) {
+    logError('Erro na sincronização', (err as Error).message, 'sync');
     return 'error';
   }
 }
