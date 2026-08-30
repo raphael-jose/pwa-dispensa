@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
-import { Moon, Sun, Bell, BellOff, Wifi, WifiOff, Trash2, Info, ChevronRight, Upload, Download, FileText, CheckCircle } from 'lucide-react';
+import { Moon, Sun, Bell, BellOff, Wifi, WifiOff, Trash2, Info, ChevronRight, Upload, Download, FileText, CheckCircle, ExternalLink, Search, Check, X as XIcon } from 'lucide-react';
 import { useAppStore } from '@/stores/appStore';
 import { getSettings, updateSettings, getAllProducts } from '@/database';
 import { parseCSV, importProducts, getCSVTemplate } from '@/utils/csvImport';
+import { getCredentials, saveCredentials, hasCredentials, lookupByGTIN } from '@/services/osccbr';
 import type { AppSettings, PantryLocation } from '@/types';
 
 export default function SettingsPage() {
@@ -11,12 +12,28 @@ export default function SettingsPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; skipped: number; errors: string[] } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // OSCBR API state
+  const [osUser, setOsUser] = useState('');
+  const [osPass, setOsPass] = useState('');
+  const [osConfigured, setOsConfigured] = useState(false);
+  const [osTesting, setOsTesting] = useState(false);
+  const [osTestResult, setOsTestResult] = useState<'success' | 'error' | null>(null);
+  const [osTestMessage, setOsTestMessage] = useState('');
+  const [osTestGtin, setOsTestGtin] = useState('');
 
   useEffect(() => {
     getSettings().then(s => {
       setLocalSettings(s);
       setSettings(s);
     });
+    // Load OSCBR credentials
+    const creds = getCredentials();
+    if (creds) {
+      setOsUser(creds.username);
+      setOsPass(creds.password);
+      setOsConfigured(true);
+    }
   }, []);
 
   async function handleFileImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -168,6 +185,121 @@ export default function SettingsPage() {
             </select>
           }
         />
+      </Section>
+
+      {/* OSCBR API - Brazilian Product Database */}
+      <Section title="Base de Produtos Brasileiros (OSCBR)">
+        <div className="p-4 space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Cadastre-se gratuitamente em{' '}
+            <a href="https://gtin.rscsistemas.com.br/cadastro" target="_blank" rel="noopener" className="text-brand-600 underline inline-flex items-center gap-1">
+              gtin.rscsistemas.com.br <ExternalLink size={12} />
+            </a>{' '}
+            para identificar produtos brasileiros automaticamente (20 consultas/minuto).
+          </p>
+
+          <div className="flex items-center gap-2">
+            {osConfigured ? <Check size={16} className="text-green-600" /> : <XIcon size={16} className="text-gray-400" />}
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {osConfigured ? 'Configurada' : 'Não configurada'}
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Usuário</label>
+            <input
+              type="text"
+              value={osUser}
+              onChange={(e) => setOsUser(e.target.value)}
+              placeholder="Seu usuário OSCBR"
+              className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Senha</label>
+            <input
+              type="password"
+              value={osPass}
+              onChange={(e) => setOsPass(e.target.value)}
+              placeholder="Sua senha OSCBR"
+              className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white text-sm"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                if (osUser && osPass) {
+                  saveCredentials({ username: osUser, password: osPass });
+                  setOsConfigured(true);
+                  alert('Credenciais salvas!');
+                }
+              }}
+              disabled={!osUser || !osPass}
+              className="flex-1 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-medium disabled:opacity-50"
+            >
+              Salvar
+            </button>
+            <button
+              onClick={() => {
+                saveCredentials({ username: '', password: '' });
+                setOsUser('');
+                setOsPass('');
+                setOsConfigured(false);
+                setOsTestResult(null);
+              }}
+              className="py-2.5 px-4 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium"
+            >
+              Limpar
+            </button>
+          </div>
+
+          {/* Test lookup */}
+          <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+            <p className="text-xs text-gray-500 mb-2">Testar com código de barras:</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="Ex: 7891234567890"
+                value={osTestGtin}
+                onChange={(e) => setOsTestGtin(e.target.value.replace(/[^0-9]/g, ''))}
+                className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white text-sm font-mono"
+              />
+              <button
+                onClick={async () => {
+                  if (!osTestGtin || !osConfigured) return;
+                  setOsTesting(true);
+                  setOsTestResult(null);
+                  try {
+                    const result = await lookupByGTIN(osTestGtin);
+                    if (result.found) {
+                      setOsTestResult('success');
+                      setOsTestMessage(`${result.name} (${result.brand})`);
+                    } else {
+                      setOsTestResult('error');
+                      setOsTestMessage('Produto não encontrado');
+                    }
+                  } catch {
+                    setOsTestResult('error');
+                    setOsTestMessage('Erro na consulta');
+                  } finally {
+                    setOsTesting(false);
+                  }
+                }}
+                disabled={!osTestGtin || osTesting || !osConfigured}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-1"
+              >
+                <Search size={14} /> Testar
+              </button>
+            </div>
+            {osTestResult && (
+              <p className={`text-xs mt-2 ${osTestResult === 'success' ? 'text-green-600' : 'text-red-500'}`}>
+                {osTestResult === 'success' ? '✅' : '❌'} {osTestMessage}
+              </p>
+            )}
+          </div>
+        </div>
       </Section>
 
       {/* Sync */}

@@ -1,11 +1,12 @@
 import { lookupProductByBarcode, type ProductLookupResult } from './openFoodFacts';
+import { lookupByGTIN, hasCredentials } from './osccbr';
 
 export type { ProductLookupResult };
 
 // Local cache for known products (barcode → product info)
 const LOCAL_CACHE_KEY = 'despensa_local_products';
 
-function getLocalCache(): Record<string, { name: string; brand: string; category: string }> {
+function getLocalCache(): Record<string, { name: string; brand: string; category: string; imageUrl?: string }> {
   try {
     const data = localStorage.getItem(LOCAL_CACHE_KEY);
     return data ? JSON.parse(data) : {};
@@ -14,7 +15,7 @@ function getLocalCache(): Record<string, { name: string; brand: string; category
   }
 }
 
-export function saveToLocalCache(barcode: string, data: { name: string; brand: string; category: string }) {
+export function saveToLocalCache(barcode: string, data: { name: string; brand: string; category: string; imageUrl?: string }) {
   try {
     const cache = getLocalCache();
     cache[barcode] = data;
@@ -24,13 +25,17 @@ export function saveToLocalCache(barcode: string, data: { name: string; brand: s
   }
 }
 
+export function clearLocalCache() {
+  localStorage.removeItem(LOCAL_CACHE_KEY);
+}
+
 /**
  * ProductProvider - abstraction layer for product lookup APIs.
- * Chains through: Local Cache → Open Food Facts → Open Beauty Facts → Open Products Facts
+ * Chain: Local Cache → OSCBR (Brazilian) → Open Food Facts → Open Beauty Facts → Open Products Facts
  */
 
 export async function lookupProduct(barcode: string): Promise<ProductLookupResult> {
-  // 1. Check local cache first
+  // 1. Check local cache first (instant, no network)
   const cache = getLocalCache();
   if (cache[barcode]) {
     const cached = cache[barcode];
@@ -41,11 +46,35 @@ export async function lookupProduct(barcode: string): Promise<ProductLookupResul
       name: cached.name,
       brand: cached.brand,
       category: cached.category,
+      imageUrl: cached.imageUrl,
       source: 'local_cache'
     };
   }
 
-  // 2. Try external APIs
+  // 2. Try OSCBR API (best for Brazilian products)
+  if (hasCredentials()) {
+    console.log('[Provider] Tentando OSCBR API...');
+    try {
+      const result = await lookupByGTIN(barcode);
+      if (result.found) {
+        console.log('[Provider] ✅ OSCBR:', result.name);
+        return {
+          found: true,
+          barcode,
+          name: result.name || '',
+          brand: result.brand || '',
+          category: result.category || 'outros',
+          imageUrl: result.imageUrl || '',
+          source: 'osccbr'
+        };
+      }
+    } catch (err) {
+      console.error('[Provider] OSCBR erro:', err);
+    }
+  }
+
+  // 3. Try Open Food Facts → Beauty → Products
+  console.log('[Provider] Tentando Open Food Facts...');
   return lookupProductByBarcode(barcode);
 }
 
@@ -73,7 +102,7 @@ export function validateBarcode(code: string): { valid: boolean; type: string } 
   }
 
   // Code 128
-  if (/^[A-Za-z0-9\-\.\ \$\/\+\%]+$/.test(cleaned) && cleaned.length >= 3) {
+  if (/^[A-Za-z0-9\-\. \/\+\%]+$/.test(cleaned) && cleaned.length >= 3) {
     return { valid: true, type: 'Code 128' };
   }
 
